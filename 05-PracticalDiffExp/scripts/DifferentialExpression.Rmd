@@ -1,0 +1,266 @@
+---
+title: "Neurotranscriptomics practical"
+author: "Melyssa Minto"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output: html_notebook
+---
+
+## Background
+
+This script will use the data from [Engram-specific transcriptome profiling of contextual memory consolidation](https://www.nature.com/articles/s41467-019-09960-x) to find differential gene expression in Engram cells between Fear-conditioned and control experiments.
+
+## Setup for analysis
+Packages that need to be installed and loaded are 
+
++ [tidyverse](https://www.tidyverse.org/packages/)
+
++ [DESeq2](https://bioconductor.org/packages/release/bioc/html/DESeq2.html)
+
++ [edgeR](https://bioconductor.org/packages/release/bioc/html/edgeR.html)
+=
++ dendextend
+
++ reshape2
+
+```{r loading packages, message=FALSE}
+# installing packages from the CRAN repo
+install.packages('tidyverse')
+install.packages('reshape2')
+install.packages('dendextend')
+
+# Installing packages from the Bioconductor repo
+if (!requireNamespace("BiocManager", quietly = TRUE))
+    install.packages("BiocManager")
+
+BiocManager::install("edgeR")
+BiocManager::install("DESeq2")
+
+library(tidyverse)
+library(DESeq2)
+library(edgeR)
+library(reshape2)
+library(dendextend)
+```
+
+## Loading data
+
+```{r import meta data, message=FALSE}
+# importing the metadata from the paper
+SraRunTable <- read_csv("../data/SraRunTable.txt")
+
+
+# cleaning the column names
+colnames(SraRunTable) = gsub(" \\(exp\\)", "", colnames(SraRunTable))
+
+# swapping out "-" and "+" for "minus" and "plus" becuase it will throw errors otherwise
+SraRunTable$Cell_type = gsub("-", "_minus", SraRunTable$Cell_type)
+SraRunTable$Cell_type = gsub("\\+", "_plus", SraRunTable$Cell_type)
+
+
+head(SraRunTable)
+```
+
+Next we want to read in the data. Each sample's counts are stored in a separate file. files into a count matrix
+```{r import counts}
+# getting the list of all count files
+file_list <- list.files(path="../data/counts", full.names = T)
+
+# extracting the GEO accession number for experiment identifier
+accession = gsub('^.*../data/counts/\\s*|\\_.*$', '', file_list)
+
+# reading in the gene list from the first count file
+genes <- read.table(file_list[1], header=FALSE, sep="\t")[,1]   
+# reading in the counts from all the files
+counts    <- do.call(cbind,lapply(file_list,function(fn)read.table(fn,header=FALSE, sep="\t")[,2]))
+colnames(counts) = accession
+
+counts = data.frame(SYMBOL=genes,
+                     counts)
+
+head(counts)
+```
+
+
+```{r}
+tail(counts)
+```
+
+
+```{r}
+# filter out the htseq stats 
+counts = counts[!c(grepl("__no_feature", counts$SYMBOL)| 
+                   grepl("__ambiguous", counts$SYMBOL)| 
+                   grepl("__too_low_aQual", counts$SYMBOL)|  
+                   grepl("__not_aligned", counts$SYMBOL)| 
+                   grepl("__alignment_not_unique", counts$SYMBOL)), ]
+
+tail(counts)
+```
+
+
+
+## Qulaity control
+
+```{r}
+# adding read depths to metadata
+metadata = data.frame(GEO_Accession = accession,
+           depth = colSums(counts[,2:ncol(counts)]) ) %>% 
+  left_join(SraRunTable) 
+metadata
+```
+
+```{r, fig.width=12}
+metadata %>% 
+  ggplot(aes(x = accession, y = depth, fill = Mouse_ID)) +
+  geom_col() +
+  facet_wrap(~Cell_type, scales = "free_y")+ 
+  coord_flip() +
+  ggtitle("Cell Type")
+```
+```{r fig.width=12}
+metadata %>% 
+  ggplot(aes(x = accession, y = depth, fill = Mouse_ID)) +
+  geom_col() +
+  facet_wrap(~Treatment, scales = "free_y")+ 
+  coord_flip() +
+  ggtitle("Treatment")
+```
+
+
+## Filtering and Normalization
+
+```{r}
+##--edgeR--##
+# create edgeR object
+dgList <- DGEList(counts=counts[,-1], 
+                   genes=counts$SYMBOL, 
+                   group = metadata$source_name 
+                  )
+```
+
+
+```{r}
+countsPerMillion <- cpm(dgList)
+summary(countsPerMillion)
+```
+
+```{r}
+countCheck <- countsPerMillion > 1
+head(countCheck)
+```
+
+```{r}
+# filter based on counts per million
+keep <- which(rowSums(countCheck) >= 10)
+dgList <- dgList[keep,]
+genes.filt = genes[keep]
+length(genes.filt)
+```
+
+
+## Differential Aanlysis
+```{r}
+##-- switching over to DESeq2--#
+counts_filt = dgList$counts
+
+dds<-DESeqDataSetFromMatrix(countData = counts_filt,
+                            colData = metadata,
+                            design = ~ Cell_type + Treatment ) 
+dds<-DESeq(dds)
+
+```
+### visualizing normalized counts
+```{r}
+
+vsd <- vst(dds, blind =FALSE)
+mat <-assay(vsd)
+head(as.data.frame(mat))
+```
+```{r}
+dend = t(mat) %>% 
+  scale %>% 
+  dist %>% 
+  hclust %>% 
+  as.dendrogram 
+
+l = metadata$Treatment[ metadata$GEO_Accession %in% labels(dend)]
+dend %>% 
+  set("labels", l) %>% 
+  plot
+
+```
+```{r}
+mat.pca<-prcomp(t(mat)) #perform PCA
+summary(mat.pca)
+```
+
+```{r}
+#Extract PCA scrores
+scores <-as.data.frame(mat.pca$x) 
+scores
+
+```
+
+```{r, message=FALSE}
+scores %>% 
+  mutate(GEO_Accession = rownames(scores)) %>% 
+  left_join(metadata) %>% 
+  ggplot(aes(PC1, PC2, color = Treatment))+
+  geom_point()
+
+scores %>% 
+  mutate(GEO_Accession = rownames(scores)) %>% 
+  left_join(metadata) %>% 
+  ggplot(aes(PC1, PC2, color = Cell_type))+
+  geom_point()
+
+```
+
+
+```{r}
+# Getting deseq results 
+HomeCagevNonShock= results(dds, contrast = c("Treatment", "HomeCage", "Non Shock"), tidy = TRUE)
+FearCondvNonShock= results(dds, contrast = c("Treatment", "Fear Conditioned", "Non Shock"), tidy = TRUE)
+FearCondvHomeCage= results(dds, contrast = c("Treatment", "Fear Conditioned", "HomeCage"), tidy = TRUE)
+
+```
+
+```{r}
+# reformatting results
+pval=.05
+lfc=1.5
+# Home cage v Non Shock treatment
+ HomeCagevNonShock = HomeCagevNonShock %>% 
+  mutate(sig = ifelse(log2FoldChange > lfc & padj < pval, "UP", (ifelse(log2FoldChange < -lfc & padj < pval, "DOWN", "not sig")) )) %>% 
+  mutate(SYMBOL=genes.filt)
+
+head(HomeCagevNonShock)
+```
+
+```{r}
+table(HomeCagevNonShock$sig)
+```
+```{r}
+HomeCagevNonShock$SYMBOL[!(HomeCagevNonShock$sig %in% "not sig")]=
+```
+
+```{r}
+# non shock v Fear conditioned
+FearCondvNonShock <- FearCondvNonShock %>% 
+  mutate(sig = ifelse(log2FoldChange > lfc & padj < pval, "UP", (ifelse(log2FoldChange < -lfc & padj < pval, "DOWN", "not sig")) ))%>% 
+  mutate(SYMBOL=genes.filt)
+
+table(FearCondvNonShock$sig)
+```
+
+```{r}
+# home cage v fear conditioned
+FearCondvHomeCage <- FearCondvHomeCage %>% 
+  mutate(sig = ifelse(log2FoldChange > lfc & padj < pval, "UP", (ifelse(log2FoldChange < -lfc & padj < pval, "DOWN", "not sig")) ))%>% 
+  mutate(SYMBOL=genes.filt)
+table(FearCondvHomeCage$sig)
+```
+
+```{r}
+save.image("DIffExpResults.RData")
+```
