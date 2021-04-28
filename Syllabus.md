@@ -12,9 +12,17 @@
 
 💡 Each class will have a pre-assesment and video lecture that are to be completed before the live course. 
 
-## 📅Schedule
+## 📅 Schedule
 
-[Untitled](https://www.notion.so/2a6d1ade77cc43a9976e18759dd5898d)
+| Date        | Lesson           | Description  |
+| ------------- |:-------------| :-----|
+|May 5, 2021 |	Lesson 1: Intro to transcriptomics| 	This lesson will cover transcription, how the data is captures, and a basic overview on fastq and fasta files.|
+|May 13, 2021|	 Lesson 2: Sequence alignment| 	This lesson will cover the concepts behind sequence alignment, sequence alignment tools, and how to align raw sequencing data and assess alignment quality.|
+|May 19, 2021|	Lesson 3: Pre-processing |	This lesson will cover how to extract quality and transcript data from aligned sequences. |
+|May 26, 2021|	Lesson 4: Intro to Neuroplasticy|	This lesson will introduce you to the concept of neuronal plasticity as it relates to gene expression.|
+|Jun 2, 2021|	Lesson 5: Differential analysis	| |
+|Jun 9, 2021|	Lesson 6: Functional enrichment| 	This lesson will cover the statistical elements behind enrichment analyses and  tools that can be used for functional enrichemnt.|
+||Gym: Practical Assessment| 	Given a list of selected papers, you will choose one and replicate the bioinformatics analysis|
 
 ## 🎓Grading
 
