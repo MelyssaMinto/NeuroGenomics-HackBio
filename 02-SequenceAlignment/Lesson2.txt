@@ -1,0 +1,36 @@
+mkdir practice
+cd practice
+
+fastqc /home/transcriptomics/Lesson2/sample.fastq --outdir=.
+ls
+unzip sample_fastqc
+cd sample_fastqc
+ls
+cat summary.txt
+
+# view the header
+samtools view -H sample.bam
+
+# print the first 10 alignments
+samtools view sample.bam | head -n 10
+
+# explore flags
+
+samtools view -f 16 sample.bam | wc -l
+
+
+# genome generate
+STAR --runThreadN 6 \
+--runMode genomeGenerate \
+--genomeDir /home/transcriptomics/STAR_mm10_2.7.2b/\
+--genomeFastaFiles /home/transcriptomics/mm10.fa \
+--sjdbGTFfile /home/transcriptomics/mm10.gtf
+
+# algin
+STAR --genomeDir /home/transcriptomics/STAR_mm10_2.7.2b/ \
+--runThreadN 6 \
+--readFilesIn sample.fq \
+--outFileNamePrefix sample \
+--outSAMtype BAM SortedByCoordinate \
+--outSAMunmapped Within \
+--outSAMattributes Standard 
