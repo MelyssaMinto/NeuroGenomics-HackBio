@@ -1,0 +1,9 @@
+#getting the summary or flag statistics
+samtools flagstat /home/transcriptomics/Lesson2/sample.bam > practice/sample_flagstat.txt
+
+#run qualimap on bam files
+qualimap bamqc -bam /home/transcriptomics/Lesson2/sample.bam --outdir=practice/
+
+#run htseq-count to extract gene counts
+htseq-count --type=gene --format=bam --stranded=yes --idattr=gene_name /home/transcriptomics/Lesson2/sample.bam /home/transcriptomics/m
+m10.gtf > practice/gene.reads
