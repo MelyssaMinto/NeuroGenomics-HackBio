@@ -5,5 +5,6 @@ samtools flagstat /home/transcriptomics/Lesson2/sample.bam > practice/sample_fla
 qualimap bamqc -bam /home/transcriptomics/Lesson2/sample.bam --outdir=practice/
 
 #run htseq-count to extract gene counts
-htseq-count --type=gene --format=bam --stranded=yes --idattr=gene_name /home/transcriptomics/Lesson2/sample.bam /home/transcriptomics/m
-m10.gtf > practice/gene.reads
+htseq-count --type=gene --format=bam --stranded=yes --idattr=gene_name /home/transcriptomics/Lesson2/sample.bam /home/transcriptomics/mm10.gtf > practice/gene_reads.txt
+
+
