@@ -17,7 +17,7 @@ Packages that need to be installed and loaded are
 + [DESeq2](https://bioconductor.org/packages/release/bioc/html/DESeq2.html)
 
 + [edgeR](https://bioconductor.org/packages/release/bioc/html/edgeR.html)
-=
+
 + dendextend
 
 + reshape2
@@ -163,15 +163,16 @@ length(genes.filt)
 ##-- switching over to DESeq2--#
 counts_filt = dgList$counts
 
+# building the deseq object
 dds<-DESeqDataSetFromMatrix(countData = counts_filt,
                             colData = metadata,
-                            design = ~ Cell_type + Treatment ) 
+                           design = ~ Cell_type + Treatment ) 
+# running the deseq model
 dds<-DESeq(dds)
 
 ```
 ### visualizing normalized counts
 ```{r}
-
 vsd <- vst(dds, blind =FALSE)
 mat <-assay(vsd)
 head(as.data.frame(mat))
@@ -241,7 +242,7 @@ head(HomeCagevNonShock)
 table(HomeCagevNonShock$sig)
 ```
 ```{r}
-HomeCagevNonShock$SYMBOL[!(HomeCagevNonShock$sig %in% "not sig")]=
+HomeCagevNonShock$SYMBOL[!(HomeCagevNonShock$sig %in% "not sig")]
 ```
 
 ```{r}
@@ -259,6 +260,20 @@ FearCondvHomeCage <- FearCondvHomeCage %>%
   mutate(sig = ifelse(log2FoldChange > lfc & padj < pval, "UP", (ifelse(log2FoldChange < -lfc & padj < pval, "DOWN", "not sig")) ))%>% 
   mutate(SYMBOL=genes.filt)
 table(FearCondvHomeCage$sig)
+```
+
+```{r}
+# volcano plot
+
+FearCondvHomeCage %>% 
+  filter(!(sig %in% NA)) %>% 
+  mutate(l = ifelse(sig %in% c("UP", "DOWN"), SYMBOL, "")) %>% 
+  ggplot(aes(x=log2FoldChange, y=-log(padj), color= sig, label=l))+
+  geom_point(alpha=0.3) +
+  geom_vline(xintercept = -1.5)+
+  geom_vline(xintercept = 1.5)+
+  geom_hline(yintercept = -log(0.05)) +
+  geom_text()
 ```
 
 ```{r}
