@@ -1,5 +1,5 @@
 ---
-title: "03-Practical Functional Annotation"
+title: "Practical Functional Annotation"
 output: html_notebook
 ---
 
@@ -20,8 +20,8 @@ BiocManager::install("TxDb.Mmusculus.UCSC.mm10.knownGene")
 BiocManager::install("org.Mm.eg.db")
 BiocManager::install("clusterProfiler")
 BiocManager::install("ReactomePA")
-BiocManager::install("impute")
-BiocManager::install("WGCNA")
+BiocManager::install("enrichplot")
+
 
 # Import Libraries and Functions
 library(tidyverse)
@@ -33,30 +33,34 @@ library(dendextend)
 library(TxDb.Mmusculus.UCSC.mm10.knownGene)
 library(org.Mm.eg.db)
 library(clusterProfiler)
-library(corrplot)
-library(WGCNA)
+library(ReactomePA)
+library(enrichplot)
 ```
 
 ```{r}
-load("../02-PracticalDiffExp/scripts/DIffExpResults.RData")
+load("../05-PracticalDiffExp/scripts/DIffExpResults.RData")
 
 ```
 
 ## DIfferential Expression
 ```{r}
-# creating a column that groups the Home Cage and NonShock as controls
+# want to focus on the differences between FearConditioned dVenus+ and dVenus- cells
+# so I will subset this analysis for those cells
+
 metadata =
   metadata %>% 
-  mutate(comp = case_when( 
-    Treatment %in% c("Fear Conditioned") ~ "Fear Conditioned",
-    Treatment %in% c("HomeCage", "Non Shock") ~ "Control")
-    )
+  filter(Treatment %in% "Fear Conditioned")
+
 metadata
+
+countsFC = counts[, metadata$GEO_Accession]
+countsFC
 ```
 ```{r}
-dds<-DESeqDataSetFromMatrix(countData = counts_filt,
+
+dds<-DESeqDataSetFromMatrix(countData = countsFC,
                             colData = metadata,
-                            design = ~ comp + comp:Cell_type) 
+                            design = ~ Cell_type) 
 dds<-DESeq(dds)
 ```
 
@@ -73,7 +77,7 @@ dend = t(mat) %>%
   hclust %>% 
   as.dendrogram 
 
-l = metadata$comp[ metadata$GEO_Accession %in% labels(dend)]
+l = metadata$Cell_type[ metadata$GEO_Accession %in% labels(dend)]
 dend %>% 
   set("labels", l) %>% 
   plot
@@ -91,11 +95,6 @@ scores
 
 ```
 ```{r, message=FALSE}
-scores %>% 
-  mutate(GEO_Accession = rownames(scores)) %>% 
-  left_join(metadata) %>% 
-  ggplot(aes(PC1, PC2, color = comp))+
-  geom_point()
 
 scores %>% 
   mutate(GEO_Accession = rownames(scores)) %>% 
@@ -103,93 +102,77 @@ scores %>%
   ggplot(aes(PC1, PC2, color = Cell_type))+
   geom_point()
 
+
 ```
 
 ```{r}
 # Getting deseq results 
-FearCondvControl= results(dds, contrast = c("comp", "Fear Conditioned", "Control"), tidy = TRUE)
+minusvplus= results(dds, contrast = c("Cell_type", "dVenus_plus", "dVenus_minus"), tidy = TRUE)
 
-
-```
-```{r}
 # reformatting results
 pval=.05
 lfc=1.5
 # Fear Conditioned v Control
- FearCondvControl = 
-   FearCondvControl %>% 
+ minusvplus = 
+   minusvplus %>% 
    mutate(sig = ifelse(log2FoldChange > lfc & padj < pval, "UP", (ifelse(log2FoldChange < -lfc & padj < pval, "DOWN", "not sig")) )) %>% 
-  mutate(SYMBOL=genes.filt)
+  mutate(SYMBOL=counts$SYMBOL)
 
 
-head(FearCondvControl)
-
-
+head(minusvplus)
 
 ```
 
 ```{r}
-table(FearCondvControl$sig)
+table(minusvplus$sig)
 ```
 ```{r}
-FearCondvControl$SYMBOL[!(FearCondvControl$sig %in% "not sig")]
+minusvplus$SYMBOL[minusvplus$sig %in% c("UP", "DOWN")]
 
 ```
 
 ## Functional Annotation
 ```{r}
-GOI = FearCondvControl$SYMBOL[FearCondvControl$sig %in% c("UP")]
+GOI = minusvplus$SYMBOL[minusvplus$sig %in% c("UP")]
 genesUP.df = bitr(GOI, fromType = "SYMBOL", toType = c("ENSEMBL", "SYMBOL", "ENTREZID"), OrgDb = org.Mm.eg.db)
 genesUP.df
 
-GOI = FearCondvControl$SYMBOL[FearCondvControl$sig %in% c("DOWN")]
+GOI = minusvplus$SYMBOL[minusvplus$sig %in% c("DOWN")]
 genesDOWN.df = bitr(GOI, fromType = "SYMBOL", toType = c("ENSEMBL", "SYMBOL", "ENTREZID"), OrgDb = org.Mm.eg.db)
 genesDOWN.df
+
+GOI = minusvplus$SYMBOL[minusvplus$sig %in% c("UP", "DOWN")]
+genesDE.df = bitr(GOI, fromType = "SYMBOL", toType = c("ENSEMBL", "SYMBOL", "ENTREZID"), OrgDb = org.Mm.eg.db)
+genesDE.df
 ```
 
 
 
 ```{r, fig.width=12, fig.height=7}
-GO_MF_u =  enrichGO(gene = genesUP.df$ENSEMBL,
-         OrgDb = org.Mm.eg.db, 
+# GO Enrichment analysis 
+GO_CC_u =  enrichGO(gene = genesUP.df$ENSEMBL,
+         OrgDb = org.Mm.eg.db,
          keyType = "ENSEMBL",
-         ont = "MF",
+         ont = "CC",
          pAdjustMethod = "BH",
          pvalueCutoff = 0.01,
          qvalueCutoff = 0.05)
-  
-goplot(GO_MF_u)
-# 
-# GO_CC_u =  enrichGO(gene = genesUP.df$ENSEMBL,
-#          OrgDb = org.Mm.eg.db, 
-#          keyType = "ENSEMBL",
-#          ont = "CC",
-#          pAdjustMethod = "BH",
-#          pvalueCutoff = 0.01,
-#          qvalueCutoff = 0.05)
-#   
-# goplot(GO_CC_u)
-# 
-# GO_BP_u =  enrichGO(gene = genesUP.df$ENSEMBL,
-#          OrgDb = org.Mm.eg.db, 
-#          keyType = "ENSEMBL",
-#          ont = "BP",
-#          pAdjustMethod = "BH",
-#          pvalueCutoff = 0.01,
-#          qvalueCutoff = 0.05)
-#   
-# goplot(GO_BP_u)
+
+goplot(GO_CC_u)
+
+GO_BP_u =  enrichGO(gene = genesUP.df$ENSEMBL,
+         OrgDb = org.Mm.eg.db,
+         keyType = "ENSEMBL",
+         ont = "BP",
+         pAdjustMethod = "BH",
+         pvalueCutoff = 0.01,
+         qvalueCutoff = 0.05)
+
+goplot(GO_BP_u)
 ```
+
 ```{r, fig.width=12, fig.height=7}
-GO_MF_d =  enrichGO(gene = genesDOWN.df$ENSEMBL,
-         OrgDb = org.Mm.eg.db, 
-         keyType = "ENSEMBL",
-         ont = "MF",
-         pAdjustMethod = "BH",
-         pvalueCutoff = 0.01,
-         qvalueCutoff = 0.05)
-  
-goplot(GO_MF_d)
+
 
 GO_CC_d =  enrichGO(gene = genesDOWN.df$ENSEMBL,
          OrgDb = org.Mm.eg.db, 
@@ -212,84 +195,73 @@ GO_BP_d =  enrichGO(gene = genesDOWN.df$ENSEMBL,
 goplot(GO_BP_d)
 ```
 
-```{r}
+```{r, fig.width= 12, fig.height=12}
+# creating geneList input for pathway analysis
 
-matDE = mat[FearCondvControl$sig %in% c("UP", "DOWN"), ]
-# Choose a set of soft-thresholding powers
-powers = c(c(1:10), seq(from = 12, to=20, by=2))
-# Call the network topology analysis function
-sft = WGCNA::pickSoftThreshold(t(matDE), powerVector = powers, verbose = 5)
-# Plot the results:
-sizeGrWindow(9, 5)
-par(mfrow = c(1,2));
-cex1 = 0.9;
-# Scale-free topology fit index as a function of the soft-thresholding power
-plot(sft$fitIndices[,1], -sign(sft$fitIndices[,3])*sft$fitIndices[,2],
-xlab="Soft Threshold (power)",ylab="Scale Free Topology Model Fit,signed R^2",type="n",
-main = paste("Scale independence"));
-text(sft$fitIndices[,1], -sign(sft$fitIndices[,3])*sft$fitIndices[,2],
-labels=powers,cex=cex1,col="red");
-# this line corresponds to using an R^2 cut-off of h
-abline(h=0.90,col="red")
-# Mean connectivity as a function of the soft-thresholding power
-plot(sft$fitIndices[,1], sft$fitIndices[,5],
-xlab="Soft Threshold (power)",ylab="Mean Connectivity", type="n",
-main = paste("Mean connectivity"))
-text(sft$fitIndices[,1], sft$fitIndices[,5], labels=powers, cex=cex1,col="red")
+s = minusvplus %>% 
+  filter(sig %in% "UP") %>% 
+  right_join(genesUP.df) %>%
+  dplyr::select(log2FoldChange, ENTREZID)
+
+geneListUP = s$log2FoldChange
+names(geneListUP)= s$ENTREZID
+geneListUP <- sort(geneListUP, decreasing = TRUE)
+head(geneListUP)
+
+
+pathwayUP = enrichPathway(gene =genesUP.df$ENTREZID, 
+              pvalueCutoff = 0.05, 
+              readable=TRUE, 
+              organism = "mouse")
+
+dotplot(pathwayUP)
+
+cnetplot(pathwayUP, foldChange=geneListUP)
+
+```
+```{r, fig.width= 12, fig.height=12}
+s = minusvplus %>% 
+  filter(sig %in% "DOWN") %>% 
+  right_join(genesDOWN.df) %>%
+  dplyr::select(log2FoldChange, ENTREZID)
+
+geneListDOWN = s$log2FoldChange
+names(geneListDOWN)= s$ENTREZID
+geneListUP <- sort(geneListDOWN, decreasing = TRUE)
+head(geneListDOWN)
+
+
+pathwayDOWN = enrichPathway(gene =genesDOWN.df$ENTREZID, 
+              pvalueCutoff = 0.05, 
+              readable=TRUE, 
+              organism = "mouse")
+
+dotplot(pathwayDOWN)
+
+cnetplot(pathwayDOWN, foldChange=geneListDOWN)
+
+```
+```{r, fig.width= 12, fig.height=12}
+s = minusvplus %>% 
+  right_join(genesDE.df) %>%
+  dplyr::select(log2FoldChange, ENTREZID) 
+geneList = s$log2FoldChange
+names(geneList)= s$ENTREZID
+geneListUP <- sort(geneList, decreasing = TRUE)
+head(geneList)
+
+
+pathwayDE = enrichPathway(gene =genesDE.df$ENTREZID, 
+              pvalueCutoff = 0.05, 
+              readable=TRUE, 
+              organism = "mouse")
+
+dotplot(pathwayDE)
+
+cnetplot(pathwayDE, foldChange=geneList)
 
 ```
 
-```{r}
-adjacency <- adjacency(t(mat), power = 5)
-TOMadj <- TOMsimilarity(adjacency)
-```
-```{r}
-dissTOMadj <- 1- TOMadj
 
 
-# Clustering using TOM
-# Call the hierarchical clustering function 
-hclustGeneTree <- hclust(as.dist(dissTOMadj), method = "average")
-
-# Plot the resulting clustering tree (dendogram)
-sizeGrWindow(12, 9)
-plot(hclustGeneTree, xlab = "", sub = "", 
-     main = "Gene Clustering on TOM-based disssimilarity", 
-     labels = FALSE, hang = 0.04)
-```
-
-```{r}
-# Make the modules larger, so set the minimum higher
-minModuleSize <- 12
-
-# Module ID using dynamic tree cut
-dynamicMods <- cutreeDynamic(dendro = hclustGeneTree, 
-                             distM = dissTOMadj,
-                             deepSplit = 2, pamRespectsDendro = FALSE,
-                             minClusterSize = minModuleSize)
-```
-```{r}
-table(dynamicMods)
-
-```
-```{r}
-# Convert numeric lables into colors
-dynamicColors <- labels2colors(dynamicMods)
-table(dynamicColors)
-```
-```{r}
-# Plot the dendrogram and colors underneath
-sizeGrWindow(8,6)
-plotDendroAndColors(hclustGeneTree, dynamicColors, "Dynamic Tree Cut", 
-                    dendroLabels = FALSE, hang = 0.03, 
-                    addGuide = TRUE, guideHang = 0.05, 
-                    main = "Gene dendrogram and module colors")
-```
-```{r}
-module_df <- data.frame(
-  gene_id = names(netwk$colors),
-  colors = labels2colors(netwk$colors)
-)
-
-```
 
